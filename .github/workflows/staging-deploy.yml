@@ -24,7 +24,7 @@ jobs:
           username: ${{ secrets.STAGING_SSH_USER }}
           password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key if you switched back
           port: 22
-          source: "Task-1/one_fm_google_integration/" # Source folder from repo
+          source: "Task-1/one_fm_google_integration/one_fm_google_integration/" # Source folder from repo
           target: "/tmp/deploy_app"                     # Temporary destination on server
           rm: true                                     # Clean the temp dir first
 
