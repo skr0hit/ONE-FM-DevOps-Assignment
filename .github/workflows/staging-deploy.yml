@@ -48,68 +48,77 @@ jobs:
             rm -rf "$APP_TARGET_PATH"
             mv "$APP_SOURCE_PATH" "$APP_TARGET_PATH"
             
-            echo "==== 2. Navigating to Bench Directory ===="
-            cd "$BENCH_PATH"
-            
             # --- START NEW FIX ---
-            echo "==== 3. Restarting Bench Services (Attempt 1) ===="
-            # Restart services BEFORE trying install-app to ensure Python sees the new files
-            sudo /home/frappe/.local/bin/bench restart
-            # Add a small delay to allow services to restart fully
-            sleep 5 
+            echo "==== 2. Setting ownership and permissions ===="
+            sudo chown -R frappe:frappe "$APP_TARGET_PATH"
+            find "$APP_TARGET_PATH" -type d -exec chmod 755 {} \;
+            find "$APP_TARGET_PATH" -type f -exec chmod 644 {} \;
+            
+            echo "==== 3. Setting PYTHONPATH ===="
+            # Explicitly add the apps directory to Python's search path
+            export PYTHONPATH=$BENCH_PATH/apps:$PYTHONPATH
+            echo "PYTHONPATH is now: $PYTHONPATH"
             # --- END NEW FIX ---
 
-            echo "==== 4. Refreshing bench requirements ===="
+            echo "==== 4. Navigating to Bench Directory ===="
+            cd "$BENCH_PATH"
+            
+            echo "==== 5. Restarting Bench Services (Attempt 1) ===="
+            sudo /home/frappe/.local/bin/bench restart
+            sleep 5 
+
+            echo "==== 6. Refreshing bench requirements ===="
             /home/frappe/.local/bin/bench setup requirements
             
-            echo "==== 5. Registering the app with the site ===="
+            echo "==== 7. Registering the app with the site ===="
+            # Now try installing the app
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app "$APP_NAME"
             
-            echo "==== 6. Running Unit Tests ===="
+            echo "==== 8. Running Unit Tests ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app "$APP_NAME"
             
-            # Step 7: Installing Python dependencies - REMOVED
+            # Step 9: Installing Python dependencies - REMOVED
             
-            echo "==== 8. Running Database Migrations ===="
+            echo "==== 10. Running Database Migrations ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
             
-            echo "==== 9. Restarting Bench Services (Attempt 2) ===="
+            echo "==== 11. Restarting Bench Services (Attempt 2) ===="
             sudo /home/frappe/.local/bin/bench restart
             
             echo "✅ Deployment to staging complete!"
 
       # Step 4: Send Success Notification
-      - name: Send Success Notification
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.MAIL_HOST }}
-          server_port: ${{ secrets.MAIL_PORT }}
-          username: ${{ secrets.MAIL_USER }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "✅ DEPLOYMENT SUCCESS: one_fm_google_integration to Staging"
-          to: ${{ secrets.MAIL_TO }}
-          from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
-          body: |
-            Successfully deployed commit ${{ github.sha }} to the staging server.
-            Commit by: ${{ github.actor }}
-            See commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+      # - name: Send Success Notification
+      #   if: success()
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.MAIL_HOST }}
+      #     server_port: ${{ secrets.MAIL_PORT }}
+      #     username: ${{ secrets.MAIL_USER }}
+      #     password: ${{ secrets.MAIL_PASSWORD }}
+      #     subject: "✅ DEPLOYMENT SUCCESS: one_fm_google_integration to Staging"
+      #     to: ${{ secrets.MAIL_TO }}
+      #     from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
+      #     body: |
+      #       Successfully deployed commit ${{ github.sha }} to the staging server.
+      #       Commit by: ${{ github.actor }}
+      #       See commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
 
-      # Step 5: Send Failure Notification
-      - name: Send Failure Notification
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.MAIL_HOST }}
-          server_port: ${{ secrets.MAIL_PORT }}
-          username: ${{ secrets.MAIL_USER }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "❌ DEPLOYMENT FAILED: one_fm_google_integration to Staging"
-          to: ${{ secrets.MAIL_TO }}
-          from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
-          body: |
-            Failed to deploy commit ${{ github.sha }} to the staging server.
+      # # Step 5: Send Failure Notification
+      # - name: Send Failure Notification
+      #   if: failure()
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.MAIL_HOST }}
+      #     server_port: ${{ secrets.MAIL_PORT }}
+      #     username: ${{ secrets.MAIL_USER }}
+      #     password: ${{ secrets.MAIL_PASSWORD }}
+      #     subject: "❌ DEPLOYMENT FAILED: one_fm_google_integration to Staging"
+      #     to: ${{ secrets.MAIL_TO }}
+      #     from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
+      #     body: |
+      #       Failed to deploy commit ${{ github.sha }} to the staging server.
             
-            Check the pipeline log for details:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #       Check the pipeline log for details:
+      #       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
