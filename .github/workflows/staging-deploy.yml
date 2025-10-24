@@ -19,17 +19,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Securely copy the correct app code subfolder to a TEMPORARY location on server
+      # Step 2: Securely copy the INNERMOST app code subfolder to a TEMPORARY location on server
       - name: Securely Copy App Files to Temp
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or use key: ${{ secrets.STAGING_SSH_KEY }} if you switched back
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key
           port: 22
-          source: "Task-1/one_fm_google_integration/one_fm_google_integration/" # CORRECTED nested source path
-          target: "/tmp/deploy_app"                     # Temporary destination on server
-          rm: true                                     # Clean the temp dir first
+          source: "Task-1/one_fm_google_integration/one_fm_google_integration/" # CORRECTED SOURCE PATH (deepest level)
+          target: "/tmp/deploy_app"
+          rm: true
 
       # Step 3: Move files into place, set up bench, run tests, migrate, and restart
       - name: Deploy App and Run Commands
