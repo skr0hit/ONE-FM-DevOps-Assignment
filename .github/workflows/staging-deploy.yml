@@ -1,5 +1,8 @@
 name: Test and Deploy to Staging
 
+# This pipeline will run on:
+# 1. Any push to the 'staging' branch
+# 2. A manual run from the "Actions" tab
 on:
   push:
     branches:
@@ -9,60 +12,65 @@ on:
 jobs:
   test-and-deploy:
     name: Test and Deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # This is the temporary virtual server from GitHub
     
     steps:
       # Step 1: Check out your new repo's code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: NEW - Securely copy app code to a TEMPORARY location on server
+      # Step 2: Securely copy the correct app code subfolder to a TEMPORARY location on server
       - name: Securely Copy App Files to Temp
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key if you switched back
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or use key: ${{ secrets.STAGING_SSH_KEY }} if you switched back
           port: 22
-          source: "Task-1/one_fm_google_integration/" # Source folder from repo
+          source: "Task-1/one_fm_google_integration/one_fm_google_integration/" # CORRECTED nested source path
           target: "/tmp/deploy_app"                     # Temporary destination on server
           rm: true                                     # Clean the temp dir first
 
-      # Step 3: Move files, run tests, migrations, and restart
+      # Step 3: Move files into place, set up bench, run tests, migrate, and restart
       - name: Deploy App and Run Commands
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or use key
           port: 22
           script: |
+            # Exit immediately if a command exits with a non-zero status.
             set -e
             
             echo "==== 1. Moving app files into place ===="
+            # Define paths
             BENCH_PATH="${{ secrets.BENCH_PATH }}"
             APP_NAME="one_fm_google_integration"
             APP_TARGET_PATH="$BENCH_PATH/apps/$APP_NAME"
             APP_SOURCE_PATH="/tmp/deploy_app"
             
+            # Remove the old app directory in apps/
             rm -rf "$APP_TARGET_PATH"
+            
+            # Move the freshly copied app from /tmp into the apps/ directory
             mv "$APP_SOURCE_PATH" "$APP_TARGET_PATH"
             
             echo "==== 2. Setting ownership and permissions ===="
+            # Ensure the frappe user owns the files and permissions are correct
             sudo chown -R frappe:frappe "$APP_TARGET_PATH"
             find "$APP_TARGET_PATH" -type d -exec chmod 755 {} \;
             find "$APP_TARGET_PATH" -type f -exec chmod 644 {} \;
 
-            # --- START NEW DEBUG ---
-            echo "==== 3. Verifying internal app structure ===="
+            echo "==== 3. Verifying internal app structure (Debug) ===="
             echo "--- Listing contents of $APP_TARGET_PATH ---"
             ls -l "$APP_TARGET_PATH"
             echo "--- Checking specifically for hooks.py and __init__.py ---"
-            ls -l "$APP_TARGET_PATH/hooks.py" || echo "hooks.py NOT FOUND"
-            ls -l "$APP_TARGET_PATH/__init__.py" || echo "__init__.py NOT FOUND"
-            # --- END NEW DEBUG ---
+            ls -l "$APP_TARGET_PATH/hooks.py" || echo "hooks.py NOT FOUND (This is expected to succeed now)"
+            ls -l "$APP_TARGET_PATH/__init__.py" || echo "__init__.py NOT FOUND (This is expected to succeed now)"
             
             echo "==== 4. Setting PYTHONPATH ===="
+            # Explicitly add the apps directory to Python's search path for subsequent commands
             export PYTHONPATH=$BENCH_PATH/apps:$PYTHONPATH
             echo "PYTHONPATH is now: $PYTHONPATH"
 
@@ -70,30 +78,39 @@ jobs:
             cd "$BENCH_PATH"
             
             echo "==== 6. Restarting Bench Services (Attempt 1) ===="
+            # Restart services BEFORE trying install-app to ensure Python environment recognizes the new files
             sudo /home/frappe/.local/bin/bench restart
-            sleep 5 
+            sleep 5 # Add a small delay to allow services to restart fully
 
             echo "==== 7. Refreshing bench requirements ===="
+            # This helps install dependencies for Frappe itself and potentially other apps
             /home/frappe/.local/bin/bench setup requirements
             
             echo "==== 8. Registering the app with the site ===="
+            # This should now succeed as the module should be findable
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app "$APP_NAME"
             
             echo "==== 9. Running Unit Tests ===="
+            # Enable tests and run them for the specific app
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app "$APP_NAME"
             
-            # Step 10: Installing Python dependencies - REMOVED
+            # Step 10: Installing Python dependencies - REMOVED (Assuming no requirements.txt for this specific app)
+            # If your app *does* have a requirements.txt, add this step back:
+            # echo "==== 10. Installing App Python dependencies ===="
+            # /home/frappe/.local/bin/bench pip install -r "$APP_TARGET_PATH/requirements.txt"
             
             echo "==== 11. Running Database Migrations ===="
+            # Apply any database schema changes from the app
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
             
             echo "==== 12. Restarting Bench Services (Attempt 2) ===="
+            # Final restart after migrations
             sudo /home/frappe/.local/bin/bench restart
             
             echo "✅ Deployment to staging complete!"
 
-      # Step 4: Send Success Notification
+      # Step 4: Send Success Notification (Commented Out)
       # - name: Send Success Notification
       #   if: success()
       #   uses: dawidd6/action-send-mail@v3
@@ -110,7 +127,7 @@ jobs:
       #       Commit by: ${{ github.actor }}
       #       See commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
 
-      # # Step 5: Send Failure Notification
+      # Step 5: Send Failure Notification (Commented Out)
       # - name: Send Failure Notification
       #   if: failure()
       #   uses: dawidd6/action-send-mail@v3
