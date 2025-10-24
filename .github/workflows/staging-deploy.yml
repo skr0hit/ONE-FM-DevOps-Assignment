@@ -16,49 +16,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: NEW - Securely copy app code to server
-      # This replaces the 'git pull' logic
-      - name: Securely Copy App Files
+      # Step 2: NEW - Securely copy app code to a TEMPORARY location on server
+      - name: Securely Copy App Files to Temp
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }}
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key if you switched back
           port: 22
-          source: "Task-1/one_fm_google_integration/" # Copies contents of this subfolder
-          target: "/home/frappe/frappe-bench/apps/one_fm_google_integration"
-          rm: true # Deletes the old app directory on the server first
+          source: "Task-1/one_fm_google_integration/" # Source folder from repo
+          target: "/tmp/deploy_app"                     # Temporary destination on server
+          rm: true                                     # Clean the temp dir first
 
-      # Step 3: Run tests, migrations, and restart
-      - name: Run Deploy Commands on Server
+      # Step 3: Move files, run tests, migrations, and restart
+      - name: Deploy App and Run Commands
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }}
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key
           port: 22
           script: |
             set -e
             
-            echo "==== 1. Navigating to Bench Directory ===="
-            cd ${{ secrets.BENCH_PATH }}
+            echo "==== 1. Moving app files into place ===="
+            # Define paths
+            BENCH_PATH="${{ secrets.BENCH_PATH }}"
+            APP_NAME="one_fm_google_integration"
+            APP_TARGET_PATH="$BENCH_PATH/apps/$APP_NAME"
+            APP_SOURCE_PATH="/tmp/deploy_app"
             
-            echo "==== 2. Verify files copied by scp ===="
-            echo "--- Listing contents of apps/ ---"
-            ls -l apps/
-            echo "--- Listing contents of apps/one_fm_google_integration/ ---"
-            ls -l apps/one_fm_google_integration/
+            # Remove the old app directory in apps/
+            rm -rf "$APP_TARGET_PATH"
+            
+            # Move the freshly copied app from /tmp into the apps/ directory
+            mv "$APP_SOURCE_PATH" "$APP_TARGET_PATH"
+            
+            echo "==== 2. Navigating to Bench Directory ===="
+            cd "$BENCH_PATH"
             
             echo "==== 3. Refreshing bench requirements ===="
-            # This might help bench recognize the app module
             /home/frappe/.local/bin/bench setup requirements
             
             echo "==== 4. Registering the app with the site ===="
-            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app one_fm_google_integration
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app "$APP_NAME"
             
             echo "==== 5. Running Unit Tests ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
-            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app one_fm_google_integration
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app "$APP_NAME"
             
             # Step 6: Installing Python dependencies - REMOVED
             
