@@ -1,8 +1,5 @@
 name: Test and Deploy to Staging
 
-# This pipeline will run on:
-# 1. Any push to the 'staging' branch
-# 2. A manual run from the "Actions" tab
 on:
   push:
     branches:
@@ -12,69 +9,60 @@ on:
 jobs:
   test-and-deploy:
     name: Test and Deploy
-    runs-on: ubuntu-latest # This is the temporary virtual server from GitHub
+    runs-on: ubuntu-latest
     
     steps:
-      # Step 1: Check out your repository's code (for commit info)
+      # Step 1: Check out your new repo's code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: SSH into your EC2 server and run all the deploy commands
-      - name: SSH, Test, Pull, and Deploy
+      # Step 2: NEW - Securely copy app code to server
+      # This replaces the 'git pull' logic
+      - name: Securely Copy App Files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          password: ${{ secrets.STAGING_SSH_PASSWORD }}
+          port: 22
+          source: "Task-1/one_fm_google_integration/" # Copies contents of this subfolder
+          target: "/home/frappe/frappe-bench/apps/one_fm_google_integration"
+          rm: true # Deletes the old app directory on the server first
+
+      # Step 3: Run tests, migrations, and restart
+      - name: Run Deploy Commands on Server
         uses: appleboy/ssh-action@master
         with:
-          # These are the GitHub Secrets you will set in the next step
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
           password: ${{ secrets.STAGING_SSH_PASSWORD }}
           port: 22
           script: |
+            # 'set -e' makes the script fail if any command fails
             set -e
             
             echo "==== 1. Navigating to Bench Directory ===="
             cd ${{ secrets.BENCH_PATH }}
             
-            echo "==== 2. Setting up Git authentication ===="
-            cd apps/one_fm_google_integration
+            # We don't need git commands anymore
             
-            # --- START OF NEW FIX ---
-            # This is a robust way to set the remote URL.
-            
-            # 1. Remove the remote 'origin'. 
-            # The '|| true' ensures the script doesn't fail if 'origin' doesn't exist.
-            git remote remove origin || true
-            
-            # 2. Add 'origin' back with the correct URL and Personal Access Token.
-            git remote add origin https://${{ secrets.GH_PAT }}@github.com/ONE-F-M/one_fm_google_integration.git
-            
-            echo "--- Git remote 'origin' is now set ---"
-            # --- END OF NEW FIX ---
-            
-            echo "==== 3. Pulling latest app changes from staging branch ===="
-            git fetch origin
-            git checkout -B staging origin/staging
-            git pull origin staging
-            
-            cd ..
-            cd ..
-            
-            echo "==== 4. Running Unit Tests ===="
+            echo "==== 2. Running Unit Tests ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app one_fm_google_integration
             
-            echo "==== 5. Installing Python dependencies ===="
+            echo "==== 3. Installing Python dependencies ===="
             /home/frappe/.local/bin/bench pip install -r apps/one_fm_google_integration/requirements.txt
             
-            echo "==== 6. Running Database Migrations ===="
+            echo "==== 4. Running Database Migrations ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
             
-            echo "==== 7. Restarting Bench Services ===="
+            echo "==== 5. Restarting Bench Services ===="
             sudo /home/frappe/.local/bin/bench restart
             
             echo "✅ Deployment to staging complete!"
 
-      # Step 3: Send an email if the deployment was successful
+      # Step 4: Send Success Notification
       - name: Send Success Notification
-        if: success() # Only runs if all previous steps worked
+        if: success()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.MAIL_HOST }}
@@ -89,9 +77,9 @@ jobs:
             Commit by: ${{ github.actor }}
             See commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
 
-      # Step 4: Send an email if the deployment failed
+      # Step 5: Send Failure Notification
       - name: Send Failure Notification
-        if: failure() # Only runs if any step failed
+        if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.MAIL_HOST }}
