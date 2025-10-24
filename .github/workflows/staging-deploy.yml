@@ -10,7 +10,7 @@ on:
 jobs:
   test-and-deploy:
     name: Test and Deploy
-    runs-on: ubuntu-latest # GitHub's temporary virtual server
+    runs-on: ubuntu-latest 
     
     steps:
       # Step 1: Check out the repository code
@@ -109,38 +109,37 @@ jobs:
             
             echo "✅ Deployment to staging complete!"
 
-      # Step 4: Send Success Notification (Commented Out)
-      # - name: Send Success Notification
-      #   if: success()
-      #   uses: dawidd6/action-send-mail@v3
-      #   with:
-      #     server_address: ${{ secrets.MAIL_HOST }}
-      #     server_port: ${{ secrets.MAIL_PORT }}
-      #     username: ${{ secrets.MAIL_USER }}
-      #     password: ${{ secrets.MAIL_PASSWORD }}
-      #     subject: "✅ DEPLOYMENT SUCCESS: one_fm_google_integration to Staging"
-      #     to: ${{ secrets.MAIL_TO }}
-      #     from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
-      #     body: |
-      #       Successfully deployed commit ${{ github.sha }} to the staging server.
-      #       Commit by: ${{ github.actor }}
-      #       See commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+     # Step 4: Send Success Notification
+      - name: Send Success Notification
+        if: success() # Only runs if deploy succeeds
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_HOST }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "✅ DEPLOYMENT SUCCESS: one_fm_google_integration to Staging"
+          to: ${{ secrets.MAIL_TO }}
+          from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>" # Optional: Define sender name
+          body: |
+            Successfully deployed commit ${{ github.sha }} to the staging server.
+            Commit by: ${{ github.actor }}
+            See commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
 
-      # Step 5: Send Failure Notification (Commented Out)
-      # - name: Send Failure Notification
-      #   if: failure()
-      #   uses: dawidd6/action-send-mail@v3
-      #   with:
-      #     server_address: ${{ secrets.MAIL_HOST }}
-      #     server_port: ${{ secrets.MAIL_PORT }}
-      #     username: ${{ secrets.MAIL_USER }}
-      #     password: ${{ secrets.MAIL_PASSWORD }}
-      #     subject: "❌ DEPLOYMENT FAILED: one_fm_google_integration to Staging"
-      #     to: ${{ secrets.MAIL_TO }}
-      #     from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
-      #     body: |
-      #       Failed to deploy commit ${{ github.sha }} to the staging server.
+      # Step 5: Send Failure Notification
+      - name: Send Failure Notification
+        if: failure() # Only runs if deploy fails
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_HOST }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "❌ DEPLOYMENT FAILED: one_fm_google_integration to Staging"
+          to: ${{ secrets.MAIL_TO }}
+          from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>" # Optional: Define sender name
+          body: |
+            Failed to deploy commit ${{ github.sha }} to the staging server.
             
-      #       Check the pipeline log for details:
-      #       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
+            Check the pipeline log for details:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
