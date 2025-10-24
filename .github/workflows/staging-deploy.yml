@@ -38,25 +38,24 @@ jobs:
           password: ${{ secrets.STAGING_SSH_PASSWORD }}
           port: 22
           script: |
+            # 'set -e' makes the script fail if any command fails
             set -e
             
             echo "==== 1. Navigating to Bench Directory ===="
             cd ${{ secrets.BENCH_PATH }}
             
-            echo "==== 2. Building assets (helps bench recognize app) ===="
-            # This step might help resolve the ModuleNotFoundError
-            /home/frappe/.local/bin/bench build --app one_fm_google_integration || echo "Build failed, continuing..." 
-            # Added '|| true' temporarily in case build itself fails due to app issues
-
+            echo "==== 2. Registering the app with the site ===="
+            # This ensures the bench recognizes the app that was copied by scp.
+            # It's safe to run even if the app is already 'installed'.
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app one_fm_google_integration
+            
             echo "==== 3. Running Unit Tests ===="
             # First, explicitly enable tests for the site
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
             # Now, run the tests
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app one_fm_google_integration
             
-            # Step 4: Installing Python dependencies - REMOVED because requirements.txt doesn't exist
-            # echo "==== 4. Installing Python dependencies ===="
-            # /home/frappe/.local/bin/bench pip install -r apps/one_fm_google_integration/requirements.txt
+            # Step 4: Installing Python dependencies - REMOVED
             
             echo "==== 5. Running Database Migrations ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
