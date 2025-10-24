@@ -38,29 +38,34 @@ jobs:
           password: ${{ secrets.STAGING_SSH_PASSWORD }}
           port: 22
           script: |
-            # 'set -e' makes the script fail if any command fails
             set -e
             
             echo "==== 1. Navigating to Bench Directory ===="
             cd ${{ secrets.BENCH_PATH }}
             
-            echo "==== 2. Registering the app with the site ===="
-            # This ensures the bench recognizes the app that was copied by scp.
-            # It's safe to run even if the app is already 'installed'.
+            echo "==== 2. Verify files copied by scp ===="
+            echo "--- Listing contents of apps/ ---"
+            ls -l apps/
+            echo "--- Listing contents of apps/one_fm_google_integration/ ---"
+            ls -l apps/one_fm_google_integration/
+            
+            echo "==== 3. Refreshing bench requirements ===="
+            # This might help bench recognize the app module
+            /home/frappe/.local/bin/bench setup requirements
+            
+            echo "==== 4. Registering the app with the site ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app one_fm_google_integration
             
-            echo "==== 3. Running Unit Tests ===="
-            # First, explicitly enable tests for the site
+            echo "==== 5. Running Unit Tests ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
-            # Now, run the tests
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app one_fm_google_integration
             
-            # Step 4: Installing Python dependencies - REMOVED
+            # Step 6: Installing Python dependencies - REMOVED
             
-            echo "==== 5. Running Database Migrations ===="
+            echo "==== 7. Running Database Migrations ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
             
-            echo "==== 6. Restarting Bench Services ===="
+            echo "==== 8. Restarting Bench Services ===="
             sudo /home/frappe/.local/bin/bench restart
             
             echo "✅ Deployment to staging complete!"
