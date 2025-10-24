@@ -38,24 +38,30 @@ jobs:
           password: ${{ secrets.STAGING_SSH_PASSWORD }}
           port: 22
           script: |
-            # 'set -e' makes the script fail if any command fails
             set -e
             
             echo "==== 1. Navigating to Bench Directory ===="
             cd ${{ secrets.BENCH_PATH }}
             
-            # We don't need git commands anymore
-            
-            echo "==== 2. Running Unit Tests ===="
+            echo "==== 2. Building assets (helps bench recognize app) ===="
+            # This step might help resolve the ModuleNotFoundError
+            /home/frappe/.local/bin/bench build --app one_fm_google_integration || echo "Build failed, continuing..." 
+            # Added '|| true' temporarily in case build itself fails due to app issues
+
+            echo "==== 3. Running Unit Tests ===="
+            # First, explicitly enable tests for the site
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
+            # Now, run the tests
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app one_fm_google_integration
             
-            echo "==== 3. Installing Python dependencies ===="
-            /home/frappe/.local/bin/bench pip install -r apps/one_fm_google_integration/requirements.txt
+            # Step 4: Installing Python dependencies - REMOVED because requirements.txt doesn't exist
+            # echo "==== 4. Installing Python dependencies ===="
+            # /home/frappe/.local/bin/bench pip install -r apps/one_fm_google_integration/requirements.txt
             
-            echo "==== 4. Running Database Migrations ===="
+            echo "==== 5. Running Database Migrations ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
             
-            echo "==== 5. Restarting Bench Services ===="
+            echo "==== 6. Restarting Bench Services ===="
             sudo /home/frappe/.local/bin/bench restart
             
             echo "✅ Deployment to staging complete!"
