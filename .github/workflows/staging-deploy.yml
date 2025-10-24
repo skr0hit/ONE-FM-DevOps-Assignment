@@ -44,32 +44,35 @@ jobs:
             BENCH_PATH="/home/frappe/frappe-bench" # Using direct path
             APP_NAME="one_fm_google_integration"
             APP_TARGET_PATH="$BENCH_PATH/apps/$APP_NAME"
-            APP_SOURCE_PATH="/tmp/deploy_app"
+            APP_SOURCE_PATH="/tmp/deploy_app/" # Where scp put the files (NOTE the trailing slash)
             
-            # Ensure target directory exists and is empty before moving contents
+            # Ensure target directory exists and is empty
             rm -rf "$APP_TARGET_PATH"
             mkdir -p "$APP_TARGET_PATH" 
             
-            echo "==== 2. Moving app files into final place ===="
-            # Move the *CONTENTS* of the temp source dir into the target app dir
-            # Using 'shopt' includes hidden files if any exist
-            shopt -s dotglob
-            mv "$APP_SOURCE_PATH"/* "$APP_TARGET_PATH"/
-            shopt -u dotglob
+            echo "==== 2. Copying app files into final place using rsync ===="
+            # --- START CORRECTED RSYNC ---
+            # Use rsync to copy the *contents* of the source directory
+            # -a preserves permissions, timestamps, etc.
+            # The trailing slash on APP_SOURCE_PATH is crucial for copying contents
+            rsync -a "$APP_SOURCE_PATH" "$APP_TARGET_PATH"/
+            # --- END CORRECTED RSYNC ---
             
-            echo "==== 3. Setting ownership and permissions ===="
+            echo "==== 3. Setting ownership ===="
+            # Ownership might be needed again after rsync
             sudo chown -R frappe:frappe "$APP_TARGET_PATH"
-            find "$APP_TARGET_PATH" -type d -exec chmod 755 {} \;
-            find "$APP_TARGET_PATH" -type f -exec chmod 644 {} \;
+            # Permissions should be preserved by rsync -a, but chmod can be added if needed
+            # find "$APP_TARGET_PATH" -type d -exec chmod 755 {} \;
+            # find "$APP_TARGET_PATH" -type f -exec chmod 644 {} \;
 
             echo "==== 4. Verifying final app structure (Debug) ===="
             echo "--- Listing contents of $APP_TARGET_PATH ---"
             ls -al "$APP_TARGET_PATH" 
             echo "--- Checking specifically for hooks.py and __init__.py ---"
-            ls -l "$APP_TARGET_PATH/hooks.py" || echo "hooks.py MISSING! (THIS MUST SUCCEED)"
-            ls -l "$APP_TARGET_PATH/__init__.py" || echo "__init__.py MISSING! (THIS MUST SUCCEED)"
+            ls -l "$APP_TARGET_PATH/hooks.py" || echo "hooks.py MISSING! (MUST SUCCEED)"
+            ls -l "$APP_TARGET_PATH/__init__.py" || echo "__init__.py MISSING! (MUST SUCCEED)"
             
-            echo "==== 5. Setting PYTHONPATH (Best effort, might not be needed) ===="
+            echo "==== 5. Setting PYTHONPATH ===="
             export PYTHONPATH=$BENCH_PATH/apps:$PYTHONPATH
             echo "PYTHONPATH is now: $PYTHONPATH"
 
@@ -77,20 +80,19 @@ jobs:
             cd "$BENCH_PATH"
             
             echo "==== 7. Restarting Bench Services (Attempt 1) ===="
-            # Restart services to ensure Python environment recognizes the new files
             sudo /home/frappe/.local/bin/bench restart
-            sleep 5 # Allow services to restart fully
+            sleep 5 
 
-            echo "==== 8. Refreshing bench requirements ===="
-            # This helps install dependencies for Frappe itself and potentially other apps
-            /home/frappe/.local/bin/bench setup requirements
-            
+            echo "==== 8. Refreshing bench requirements (Skipping Git check) ===="
+            # --- Skip the git check causing InvalidGitRepositoryError ---
+            # /home/frappe/.local/bin/bench setup requirements 
+            echo "Skipped bench setup requirements to avoid Git error."
+
             echo "==== 9. Registering the app with the site ===="
-            # This should succeed now that files are in the correct place
+            # This must succeed now
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app "$APP_NAME"
             
             echo "==== 10. Running Unit Tests ===="
-            # Enable tests and run them for the specific app
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app "$APP_NAME" || echo "Tests failed or no tests found, continuing..."
             
@@ -100,11 +102,9 @@ jobs:
             # /home/frappe/.local/bin/bench pip install -r "$APP_TARGET_PATH/requirements.txt"
             
             echo "==== 12. Running Database Migrations ===="
-            # Apply any database schema changes from the app
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
             
             echo "==== 13. Restarting Bench Services (Attempt 2) ===="
-            # Final restart after migrations
             sudo /home/frappe/.local/bin/bench restart
             
             echo "✅ Deployment to staging complete!"
