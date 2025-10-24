@@ -35,7 +35,7 @@ jobs:
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or use key
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or use SSH key
           port: 22
           script: |
             set -e # Exit script on first error
@@ -51,12 +51,12 @@ jobs:
             mkdir -p "$APP_TARGET_PATH" 
             
             echo "==== 2. Copying app files into final place using rsync ===="
-            # --- START CORRECTED RSYNC ---
+
             # Use rsync to copy the *contents* of the source directory
             # -a preserves permissions, timestamps, etc.
             # The trailing slash on APP_SOURCE_PATH is crucial for copying contents
             rsync -a "$APP_SOURCE_PATH" "$APP_TARGET_PATH"/
-            # --- END CORRECTED RSYNC ---
+
             
             echo "==== 3. Setting ownership ===="
             # Ownership might be needed again after rsync
@@ -95,11 +95,6 @@ jobs:
             echo "==== 10. Running Unit Tests ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app "$APP_NAME" || echo "Tests failed or no tests found, continuing..."
-            
-            # Step 11: Installing App Python dependencies (Check if requirements.txt exists)
-            # If "one_fm_google_integration/requirements.txt" exists, uncomment the following:
-            # echo "==== 11. Installing App Python dependencies ===="
-            # /home/frappe/.local/bin/bench pip install -r "$APP_TARGET_PATH/requirements.txt"
             
             echo "==== 12. Running Database Migrations ===="
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
@@ -143,3 +138,5 @@ jobs:
             
             Check the pipeline log for details:
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            
