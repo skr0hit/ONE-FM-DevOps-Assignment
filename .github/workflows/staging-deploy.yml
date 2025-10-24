@@ -1,0 +1,129 @@
+name: Test and Deploy to Staging
+
+on:
+  push:
+    branches:
+      - staging
+  workflow_dispatch:
+
+jobs:
+  test-and-deploy:
+    name: Test and Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Check out your new repo's code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: NEW - Securely copy app code to a TEMPORARY location on server
+      - name: Securely Copy App Files to Temp
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key if you switched back
+          port: 22
+          source: "Task-1/one_fm_google_integration/" # Source folder from repo
+          target: "/tmp/deploy_app"                     # Temporary destination on server
+          rm: true                                     # Clean the temp dir first
+
+      # Step 3: Move files, run tests, migrations, and restart
+      - name: Deploy App and Run Commands
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or key
+          port: 22
+          script: |
+            set -e
+            
+            echo "==== 1. Moving app files into place ===="
+            BENCH_PATH="${{ secrets.BENCH_PATH }}"
+            APP_NAME="one_fm_google_integration"
+            APP_TARGET_PATH="$BENCH_PATH/apps/$APP_NAME"
+            APP_SOURCE_PATH="/tmp/deploy_app"
+            
+            rm -rf "$APP_TARGET_PATH"
+            mv "$APP_SOURCE_PATH" "$APP_TARGET_PATH"
+            
+            echo "==== 2. Setting ownership and permissions ===="
+            sudo chown -R frappe:frappe "$APP_TARGET_PATH"
+            find "$APP_TARGET_PATH" -type d -exec chmod 755 {} \;
+            find "$APP_TARGET_PATH" -type f -exec chmod 644 {} \;
+
+            # --- START NEW DEBUG ---
+            echo "==== 3. Verifying internal app structure ===="
+            echo "--- Listing contents of $APP_TARGET_PATH ---"
+            ls -l "$APP_TARGET_PATH"
+            echo "--- Checking specifically for hooks.py and __init__.py ---"
+            ls -l "$APP_TARGET_PATH/hooks.py" || echo "hooks.py NOT FOUND"
+            ls -l "$APP_TARGET_PATH/__init__.py" || echo "__init__.py NOT FOUND"
+            # --- END NEW DEBUG ---
+            
+            echo "==== 4. Setting PYTHONPATH ===="
+            export PYTHONPATH=$BENCH_PATH/apps:$PYTHONPATH
+            echo "PYTHONPATH is now: $PYTHONPATH"
+
+            echo "==== 5. Navigating to Bench Directory ===="
+            cd "$BENCH_PATH"
+            
+            echo "==== 6. Restarting Bench Services (Attempt 1) ===="
+            sudo /home/frappe/.local/bin/bench restart
+            sleep 5 
+
+            echo "==== 7. Refreshing bench requirements ===="
+            /home/frappe/.local/bin/bench setup requirements
+            
+            echo "==== 8. Registering the app with the site ===="
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app "$APP_NAME"
+            
+            echo "==== 9. Running Unit Tests ===="
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} set-config allow_tests true
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app "$APP_NAME"
+            
+            # Step 10: Installing Python dependencies - REMOVED
+            
+            echo "==== 11. Running Database Migrations ===="
+            /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
+            
+            echo "==== 12. Restarting Bench Services (Attempt 2) ===="
+            sudo /home/frappe/.local/bin/bench restart
+            
+            echo "✅ Deployment to staging complete!"
+
+      # Step 4: Send Success Notification
+      # - name: Send Success Notification
+      #   if: success()
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.MAIL_HOST }}
+      #     server_port: ${{ secrets.MAIL_PORT }}
+      #     username: ${{ secrets.MAIL_USER }}
+      #     password: ${{ secrets.MAIL_PASSWORD }}
+      #     subject: "✅ DEPLOYMENT SUCCESS: one_fm_google_integration to Staging"
+      #     to: ${{ secrets.MAIL_TO }}
+      #     from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
+      #     body: |
+      #       Successfully deployed commit ${{ github.sha }} to the staging server.
+      #       Commit by: ${{ github.actor }}
+      #       See commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+
+      # # Step 5: Send Failure Notification
+      # - name: Send Failure Notification
+      #   if: failure()
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.MAIL_HOST }}
+      #     server_port: ${{ secrets.MAIL_PORT }}
+      #     username: ${{ secrets.MAIL_USER }}
+      #     password: ${{ secrets.MAIL_PASSWORD }}
+      #     subject: "❌ DEPLOYMENT FAILED: one_fm_google_integration to Staging"
+      #     to: ${{ secrets.MAIL_TO }}
+      #     from: "GitHub Actions Bot <${{ secrets.MAIL_USER }}>"
+      #     body: |
+      #       Failed to deploy commit ${{ github.sha }} to the staging server.
+            
+      #       Check the pipeline log for details:
+      #       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
