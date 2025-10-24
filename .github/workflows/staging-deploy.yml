@@ -37,8 +37,21 @@ jobs:
             
             echo "==== 2. Pulling latest app changes from staging branch ===="
             cd apps/one_fm_google_integration
-            git checkout staging
+
+            # --- START OF FIX ---
+            # 1. Fetch all branch info from the remote repo
+            git fetch origin
+            
+            # 2. Force-checkout the staging branch.
+            # This creates the local 'staging' branch if it doesn't exist
+            # and resets it to match the remote's staging branch.
+            git checkout -B staging origin/staging
+            
+            # 3. Pull just to be 100% sure we are up to date.
             git pull origin staging
+            
+            # --- END OF FIX ---
+
             cd ..
             cd ..
             
