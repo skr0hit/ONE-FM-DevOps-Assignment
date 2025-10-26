@@ -1,11 +1,11 @@
 name: Test and Deploy to Staging
 
-# Triggers on push to 'staging' or manual dispatch
+# Triggers on push to 'staging' branch or manual dispatch
 on:
   push:
     branches:
       - staging
-  workflow_dispatch:
+  workflow_dispatch: # Trigger Manual Deployment if needed
 
 jobs:
   test-and-deploy:
@@ -21,58 +21,63 @@ jobs:
       - name: Securely Copy App Files to Temp
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.STAGING_SSH_HOST }}
-          username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or use key: ${{ secrets.STAGING_SSH_KEY }}
+          host: ${{ secrets.STAGING_SSH_HOST }} # IP of the Staging server
+          username: ${{ secrets.STAGING_SSH_USER }} # Log in as frappe user
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} # used password but you can use SSH key 
           port: 22
-          source: "one_fm_google_integration/" # Source folder at repo root
+          source: "one_fm_google_integration/" # Source folder to copy from the github runner to our ec2 server
           target: "/tmp/deploy_app"                     # Temp destination on server
           rm: true                                     # Clean the temp directory first
 
       # Step 3: Move files to final location, set up, test, migrate, restart
       - name: Deploy App and Run Commands
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@master #connects to our staging ec2 server via SSH and runs the commands listed in the script block.
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
-          password: ${{ secrets.STAGING_SSH_PASSWORD }} # Or use SSH key
+          password: ${{ secrets.STAGING_SSH_PASSWORD }} 
           port: 22
           script: |
-            set -e # Exit script on first error
+            set -e # Exit script if there is any error
             
             echo "==== 1. Preparing target directory ===="
-            BENCH_PATH="/home/frappe/frappe-bench" # Using direct path
+            
+            BENCH_PATH="/home/frappe/frappe-bench"
             APP_NAME="one_fm_google_integration"
             APP_TARGET_PATH="$BENCH_PATH/apps/$APP_NAME"
-            APP_SOURCE_PATH="/tmp/deploy_app/" # Where scp put the files (NOTE the trailing slash)
+            APP_SOURCE_PATH="/tmp/deploy_app/" # Where scp put the files from ghub runner to ec2
             
-            # Ensure target directory exists and is empty
+            # Removes target directory if exists and then creates an empty one
             rm -rf "$APP_TARGET_PATH"
             mkdir -p "$APP_TARGET_PATH" 
             
             echo "==== 2. Copying app files into final place using rsync ===="
 
-            # Use rsync to copy the *contents* of the source directory
-            # -a preserves permissions, timestamps, etc.
-            # The trailing slash on APP_SOURCE_PATH is crucial for copying contents
+            # Use rsync to copy the contents of the source directory. -a preserves permissions, ownership and copies directories recursively
             rsync -a "$APP_SOURCE_PATH" "$APP_TARGET_PATH"/
 
             
             echo "==== 3. Setting ownership ===="
-            # Ownership might be needed again after rsync
+            
+            # Ownership might be needed again after rsync so giving ownership to frappe use and group
             sudo chown -R frappe:frappe "$APP_TARGET_PATH"
+            
             # Permissions should be preserved by rsync -a, but chmod can be added if needed
             # find "$APP_TARGET_PATH" -type d -exec chmod 755 {} \;
             # find "$APP_TARGET_PATH" -type f -exec chmod 644 {} \;
 
-            echo "==== 4. Verifying final app structure (Debug) ===="
-            echo "--- Listing contents of $APP_TARGET_PATH ---"
-            ls -al "$APP_TARGET_PATH" 
-            echo "--- Checking specifically for hooks.py and __init__.py ---"
-            ls -l "$APP_TARGET_PATH/hooks.py" || echo "hooks.py MISSING! (MUST SUCCEED)"
-            ls -l "$APP_TARGET_PATH/__init__.py" || echo "__init__.py MISSING! (MUST SUCCEED)"
+            # echo "==== 4. Verifying final app structure (Debug) ===="
+            
+            # echo "--- Listing contents of $APP_TARGET_PATH ---"
+            # ls -al "$APP_TARGET_PATH" 
+            # echo "--- Checking specifically for hooks.py and __init__.py ---"
+            # ls -l "$APP_TARGET_PATH/hooks.py" || echo "hooks.py MISSING! (MUST SUCCEED)"
+            # ls -l "$APP_TARGET_PATH/__init__.py" || echo "__init__.py MISSING! (MUST SUCCEED)"
             
             echo "==== 5. Setting PYTHONPATH ===="
+
+            # Modifies the PYTHONPATH environment variable for the current script execution. 
+            # It adds the ~/frappe-bench/apps directory to the list of places Python looks for modules.
             export PYTHONPATH=$BENCH_PATH/apps:$PYTHONPATH
             echo "PYTHONPATH is now: $PYTHONPATH"
 
@@ -83,13 +88,9 @@ jobs:
             sudo /home/frappe/.local/bin/bench restart
             sleep 5 
 
-            echo "==== 8. Refreshing bench requirements (Skipping Git check) ===="
-            # --- Skip the git check causing InvalidGitRepositoryError ---
-            # /home/frappe/.local/bin/bench setup requirements 
-            echo "Skipped bench setup requirements to avoid Git error."
-
-            echo "==== 9. Registering the app with the site ===="
-            # This must succeed now
+            echo "==== 8. Registering the app with the site ===="
+            
+            # Runs the bench install-app command for our app (one_fm_google_integration) on your specific site (staging.local).
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} install-app "$APP_NAME"
             
             echo "==== 10. Running Unit Tests ===="
@@ -97,6 +98,8 @@ jobs:
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} run-tests --app "$APP_NAME" || echo "Tests failed or no tests found, continuing..."
             
             echo "==== 12. Running Database Migrations ===="
+            
+            #This applies any database schema changes (like new tables/DocTypes, added fields, modified field types) defined in your application's code.
             /home/frappe/.local/bin/bench --site ${{ secrets.STAGING_SITE_NAME }} migrate
             
             echo "==== 13. Restarting Bench Services (Attempt 2) ===="
