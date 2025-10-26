@@ -21,7 +21,7 @@ jobs:
       - name: Securely Copy App Files to Temp
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.STAGING_SSH_HOST }} # IP of the Staging server
+          host: ${{ secrets.STAGING_SSH_HOS }} # IP of the Staging server
           username: ${{ secrets.STAGING_SSH_USER }} # Log in as frappe user
           password: ${{ secrets.STAGING_SSH_PASSWORD }} # used password but you can use SSH key 
           port: 22
