@@ -2,8 +2,7 @@
 
 Google Integrations
 
-#### License
-
+License
 mit
 
 #Testing CI
